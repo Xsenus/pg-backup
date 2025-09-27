@@ -19,6 +19,7 @@ jobs:
           [ -n "${{ secrets.VPS_USER }}" ] || { echo "❌ VPS_USER empty"; exit 1; }
           [ -n "${{ secrets.VPS_SSH_KEY }}" ] || { echo "❌ VPS_SSH_KEY empty"; exit 1; }
           [ -n "${{ secrets.PG_BACKUP_ENV }}" ] || { echo "❌ PG_BACKUP_ENV empty"; exit 1; }
+          # VPS_SSH_PASSPHRASE опционален: используйте, если ключ с passphrase
 
       - name: Copy files to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -40,9 +41,10 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
           script: |
-            set -euo pipefail
+            set -eu
+
             sudo mkdir -p /opt/pg-backup
-            sudo chown -R $USER:$USER /opt/pg-backup
+            sudo chown -R "$USER:$USER" /opt/pg-backup
 
             # Создаем/обновляем ENV
             echo "${{ secrets.PG_BACKUP_ENV }}" | sudo tee /etc/pg-multi-backup.env > /dev/null
@@ -52,8 +54,15 @@ jobs:
             BACKUP_ROOT=$(grep '^BACKUP_ROOT=' /etc/pg-multi-backup.env | cut -d= -f2-)
             LOG_DIR=$(grep '^LOG_DIR=' /etc/pg-multi-backup.env | cut -d= -f2-)
             sudo mkdir -p "$BACKUP_ROOT" "$LOG_DIR"
-            sudo chown -R $USER:$USER "$BACKUP_ROOT" "$LOG_DIR"
+            sudo chown -R "$USER:$USER" "$BACKUP_ROOT" "$LOG_DIR"
 
+            # Установить postgresql-client при необходимости
+            if ! command -v pg_dump >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y postgresql-client
+            fi
+
+            # Права на скрипты
             sudo chmod +x /opt/pg-backup/scripts/*.sh
 
             # Установка systemd юнитов
@@ -61,6 +70,12 @@ jobs:
 
             # Тестовый запуск (не обязательно)
             sudo systemctl start pg-multi-backup.service || true
+
+            echo "[INFO] Service status:"
+            systemctl --no-pager --full status pg-multi-backup.service || true
+
+            echo "[INFO] Timer status:"
+            systemctl --no-pager --full status pg-multi-backup.timer || true
 
             echo "[INFO] Last logs:"
             sudo journalctl -u pg-multi-backup.service -n 50 --no-pager || true
