@@ -1,0 +1,64 @@
+name: Deploy pg-backup to VPS
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert secrets
+        run: |
+          [ -n "${{ secrets.VPS_HOST }}" ] || { echo "❌ VPS_HOST empty"; exit 1; }
+          [ -n "${{ secrets.VPS_USER }}" ] || { echo "❌ VPS_USER empty"; exit 1; }
+          [ -n "${{ secrets.VPS_SSH_KEY }}" ] || { echo "❌ VPS_SSH_KEY empty"; exit 1; }
+          [ -n "${{ secrets.PG_BACKUP_ENV }}" ] || { echo "❌ PG_BACKUP_ENV empty"; exit 1; }
+
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "scripts/*,systemd/*,.gitignore,.env.example,README.md"
+          target: "/opt/pg-backup"
+          overwrite: true
+          strip_components: 0
+
+      - name: Write env on VPS and install systemd
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            sudo mkdir -p /opt/pg-backup
+            sudo chown -R $USER:$USER /opt/pg-backup
+
+            # Создаем/обновляем ENV
+            echo "${{ secrets.PG_BACKUP_ENV }}" | sudo tee /etc/pg-multi-backup.env > /dev/null
+            sudo chmod 600 /etc/pg-multi-backup.env
+
+            # Папки для бэкапов и логов из ENV
+            BACKUP_ROOT=$(grep '^BACKUP_ROOT=' /etc/pg-multi-backup.env | cut -d= -f2-)
+            LOG_DIR=$(grep '^LOG_DIR=' /etc/pg-multi-backup.env | cut -d= -f2-)
+            sudo mkdir -p "$BACKUP_ROOT" "$LOG_DIR"
+            sudo chown -R $USER:$USER "$BACKUP_ROOT" "$LOG_DIR"
+
+            sudo chmod +x /opt/pg-backup/scripts/*.sh
+
+            # Установка systemd юнитов
+            sudo /opt/pg-backup/scripts/install_systemd.sh
+
+            # Тестовый запуск (не обязательно)
+            sudo systemctl start pg-multi-backup.service || true
+
+            echo "[INFO] Last logs:"
+            sudo journalctl -u pg-multi-backup.service -n 50 --no-pager || true
