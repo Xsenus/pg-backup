@@ -19,7 +19,7 @@ jobs:
           [ -n "${{ secrets.VPS_USER }}" ] || { echo "❌ VPS_USER empty"; exit 1; }
           [ -n "${{ secrets.VPS_SSH_KEY }}" ] || { echo "❌ VPS_SSH_KEY empty"; exit 1; }
           [ -n "${{ secrets.PG_BACKUP_ENV }}" ] || { echo "❌ PG_BACKUP_ENV empty"; exit 1; }
-          # VPS_SSH_PASSPHRASE опционален: используйте, если ключ с passphrase
+          # VPS_SSH_PASSPHRASE опционален (если ключ без passphrase — можно не задавать)
 
       - name: Copy files to VPS
         uses: appleboy/scp-action@v0.1.7
@@ -46,13 +46,27 @@ jobs:
             sudo mkdir -p /opt/pg-backup
             sudo chown -R "$USER:$USER" /opt/pg-backup
 
-            # Создаем/обновляем ENV
-            echo "${{ secrets.PG_BACKUP_ENV }}" | sudo tee /etc/pg-multi-backup.env > /dev/null
+            # Надёжно пишем многострочный PG_BACKUP_ENV через heredoc (переносы строк сохраняются)
+            sudo tee /etc/pg-multi-backup.env > /dev/null <<'__ENV__'
+            ${{ secrets.PG_BACKUP_ENV }}
+            __ENV__
             sudo chmod 600 /etc/pg-multi-backup.env
 
-            # Папки для бэкапов и логов из ENV
+            # Валидация обязательных переменных из ENV
+            if ! grep -qE '^BACKUP_ROOT=' /etc/pg-multi-backup.env; then
+              echo "❌ BACKUP_ROOT not set in /etc/pg-multi-backup.env"; exit 1
+            fi
+            if ! grep -qE '^LOG_DIR=' /etc/pg-multi-backup.env; then
+              echo "❌ LOG_DIR not set in /etc/pg-multi-backup.env"; exit 1
+            fi
+
             BACKUP_ROOT=$(grep '^BACKUP_ROOT=' /etc/pg-multi-backup.env | cut -d= -f2-)
             LOG_DIR=$(grep '^LOG_DIR=' /etc/pg-multi-backup.env | cut -d= -f2-)
+
+            # Доп. защита от пустых значений
+            [ -n "$BACKUP_ROOT" ] || { echo "❌ BACKUP_ROOT is empty"; exit 1; }
+            [ -n "$LOG_DIR" ] || { echo "❌ LOG_DIR is empty"; exit 1; }
+
             sudo mkdir -p "$BACKUP_ROOT" "$LOG_DIR"
             sudo chown -R "$USER:$USER" "$BACKUP_ROOT" "$LOG_DIR"
 
@@ -65,7 +79,7 @@ jobs:
             # Права на скрипты
             sudo chmod +x /opt/pg-backup/scripts/*.sh
 
-            # Установка systemd юнитов
+            # Установка systemd юнитов (service + timer)
             sudo /opt/pg-backup/scripts/install_systemd.sh
 
             # Тестовый запуск (не обязательно)
