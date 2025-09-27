@@ -26,6 +26,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
           source: "scripts/*,systemd/*,.gitignore,.env.example,README.md"
           target: "/opt/pg-backup"
           overwrite: true
@@ -37,6 +38,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          passphrase: ${{ secrets.VPS_SSH_PASSPHRASE }}
           script: |
             set -euo pipefail
             sudo mkdir -p /opt/pg-backup

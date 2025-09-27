@@ -107,6 +107,7 @@ sudo journalctl -u pg-multi-backup.service -n 50 --no-pager
 | `VPS_HOST` | IP адрес вашего VPS (например, `127.0.0.1`) |
 | `VPS_USER` | Пользователь для SSH (например, `root`) |
 | `VPS_SSH_KEY` | Приватный ключ SSH |
+| `VPS_SSH_PASSPHRASE` | Пароль для приватного ключа |
 | `PG_BACKUP_ENV` | Содержимое файла `/etc/pg-multi-backup.env` |
 
 ### 2. При каждом push в `main`
@@ -149,7 +150,7 @@ cat /var/log/pg-multi-backup/backup-2025-09.log
 ```bash
 /opt/pg-backup/scripts/restore.sh \
   /opt/pg-backups/postgres/postgres__2025-09-27_02-30-05.dump \
-  "postgresql://admin:PASS@79.174.94.14:5464/postgres"
+  "postgresql://admin:PASS@127.0.0.1:5464/postgres"
 ```
 
 ---
